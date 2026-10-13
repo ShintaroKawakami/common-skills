@@ -732,7 +732,7 @@ class HermesCollectorTests(unittest.TestCase):
             for sid, started_at, last_activity_at, ended_at in (
                 ("old", old, old, old),
                 ("recent", new - 30, new - 30, new - 30),
-                ("completed", old, None, new),
+                ("completed", old, old, new),
             ):
                 conn.execute(
                     "INSERT INTO sessions VALUES (?,?,?,?,?,NULL,?,?,?)",
@@ -928,6 +928,24 @@ class HermesCollectorTests(unittest.TestCase):
 
             self.assertEqual(resolved, dot_hermes.resolve())
 
+
+class HermesHomeAlignmentTests(unittest.TestCase):
+    def test_explicit_home_remains_authoritative_without_database(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            explicit = Path(tmp) / "empty"
+            self.assertEqual(resolve_hermes_home(explicit), explicit.resolve())
+            self.assertEqual(discover_hermes_databases(explicit), [])
+
+    def test_skills_discovered_from_each_database_home(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            homes = [home / ".hermes", home]
+            for index, root in enumerate(homes):
+                directory = root / "skills" / f"home-{index}"
+                directory.mkdir(parents=True)
+                (directory / "SKILL.md").write_text("---\ndescription: test\n---\n")
+            skills = discover_skills([], home / "codex", [], True, hermes_homes=homes)
+            self.assertTrue({"home-0", "home-1"}.issubset(skills))
 
 if __name__ == "__main__":
     unittest.main()
