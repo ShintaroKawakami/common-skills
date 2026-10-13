@@ -816,7 +816,7 @@ def parse_hermes_session(connection, session_row, skill_names, include_subagents
                     if tool == "skill_view":
                         try:
                             payload = json.loads(args_text)
-                            name = (payload or {}).get("name")
+                            name = payload.get("name") if isinstance(payload, dict) else None
                             if name in skill_names:
                                 skills_used.add(name)
                         except (ValueError, TypeError):
