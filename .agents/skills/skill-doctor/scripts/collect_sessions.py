@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -748,6 +749,27 @@ def latest_hermes_timestamp(row):
     return max((value for value in values if value is not None), default=None)
 
 
+def hermes_tool_edits(tool, args_text):
+    # [2026-10-14][fix] Include direct forwarded edit commands in Hermes grading.
+    # Keep search/read mentions non-editing; substring matching invents edits.
+    # Unknown shell wrappers are not inferred from arbitrary script text.
+    if tool in GENERIC_EDIT_TOOLS or tool in CODE_EDIT_HINTS:
+        return True
+    if tool != "terminal":
+        return False
+    try:
+        payload = json.loads(args_text)
+        command = payload.get("command") if isinstance(payload, dict) else None
+        if not isinstance(command, str):
+            return False
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>()")
+        lexer.whitespace_split = True
+        executable = lexer.get_token()
+    except (ValueError, TypeError):
+        return False
+    return bool(executable) and Path(executable).name in (GENERIC_EDIT_TOOLS | {"create_file"})
+
+
 def parse_hermes_session(connection, session_row, skill_names, include_subagents: bool):
     """Normalize one Hermes Agent session (from state.db) to the shared transcript shape."""
     if session_row["parent_session_id"] and not include_subagents:
@@ -807,7 +829,7 @@ def parse_hermes_session(connection, session_row, skill_names, include_subagents
                 for tool, args_text in assistant_tool_calls({"tool_calls": parsed_calls}):
                     stats["tool_calls"] += 1
                     used_tool_names.add(tool)
-                    if tool in CODE_EDIT_HINTS or tool in GENERIC_EDIT_TOOLS:
+                    if hermes_tool_edits(tool, args_text):
                         has_code_edit_hint = True
                     call_key = hashlib.sha1((tool + args_text).encode()).hexdigest()
                     seen_calls[call_key] = seen_calls.get(call_key, 0) + 1
