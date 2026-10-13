@@ -667,13 +667,13 @@ class HermesCollectorTests(unittest.TestCase):
             meta, stats, entries, skills_used = parsed
             self.assertEqual(meta["id"], "s1")
             self.assertEqual(meta["started_at"], datetime.fromtimestamp(base, tz=timezone.utc).isoformat())
-            self.assertEqual(meta["timestamp"], datetime.fromtimestamp(base + 2, tz=timezone.utc).isoformat())
+            self.assertEqual(meta["timestamp"], datetime.fromtimestamp(base + 60, tz=timezone.utc).isoformat())
             self.assertEqual(stats["user_turns"], 1)
             self.assertEqual(stats["assistant_turns"], 1)
             self.assertEqual(stats["tool_calls"], 2)
             self.assertEqual(stats["error_outputs"], 1)
             self.assertEqual(stats["first_ts"], datetime.fromtimestamp(base, tz=timezone.utc).isoformat())
-            self.assertEqual(stats["last_ts"], datetime.fromtimestamp(base + 2, tz=timezone.utc).isoformat())
+            self.assertEqual(stats["last_ts"], datetime.fromtimestamp(base + 60, tz=timezone.utc).isoformat())
             self.assertEqual(skills_used, ["my-skill"])
 
     def test_parse_hermes_session_skips_injected_user_content(self):
@@ -732,7 +732,7 @@ class HermesCollectorTests(unittest.TestCase):
             for sid, started_at, last_activity_at, ended_at in (
                 ("old", old, old, old),
                 ("recent", new - 30, new - 30, new - 30),
-                ("completed", old, None, new),
+                ("completed", old, old, new),
             ):
                 conn.execute(
                     "INSERT INTO sessions VALUES (?,?,?,?,?,NULL,?,?,?)",
@@ -928,6 +928,24 @@ class HermesCollectorTests(unittest.TestCase):
 
             self.assertEqual(resolved, dot_hermes.resolve())
 
+
+class HermesHomeAlignmentTests(unittest.TestCase):
+    def test_explicit_home_remains_authoritative_without_database(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            explicit = Path(tmp) / "empty"
+            self.assertEqual(resolve_hermes_home(explicit), explicit.resolve())
+            self.assertEqual(discover_hermes_databases(explicit), [])
+
+    def test_skills_discovered_from_each_database_home(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            homes = [home / ".hermes", home]
+            for index, root in enumerate(homes):
+                directory = root / "skills" / f"home-{index}"
+                directory.mkdir(parents=True)
+                (directory / "SKILL.md").write_text("---\ndescription: test\n---\n")
+            skills = discover_skills([], home / "codex", [], True, hermes_homes=homes)
+            self.assertTrue({"home-0", "home-1"}.issubset(skills))
 
 if __name__ == "__main__":
     unittest.main()

@@ -136,7 +136,7 @@ def resolve_repos(repo_args):
 
 def discover_skills(repos, codex_home: Path, extra_dirs, include_global: bool,
                     pi_home: Path = None, grok_home: Path = None, zcode_home: Path = None,
-                    hermes_home: Path = None):
+                    hermes_home: Path = None, hermes_homes=None):
     if isinstance(repos, Path):
         repos = [repos]
     roots = []
@@ -155,6 +155,8 @@ def discover_skills(repos, codex_home: Path, extra_dirs, include_global: bool,
         for home in (pi_home, grok_home, zcode_home, hermes_home):
             if home is not None:
                 roots.append(Path(home) / "skills")
+    if include_global:
+        roots += [Path(home) / "skills" for home in (hermes_homes or [])]
     roots += [Path(d).expanduser() for d in extra_dirs]
 
     skills = {}
@@ -671,9 +673,9 @@ def resolve_hermes_home(explicit_path=None):
     Preference order matches database discovery: explicit path, HERMES_HOME,
     ~/.hermes, then ~/.
     """
-    roots = []
     if explicit_path:
-        roots.append(Path(explicit_path).expanduser())
+        return Path(explicit_path).expanduser().resolve()
+    roots = []
     env_home = os.environ.get("HERMES_HOME")
     if env_home:
         roots.append(Path(env_home).expanduser())
@@ -738,6 +740,12 @@ def parse_epoch_timestamp(value):
         return datetime.fromtimestamp(float(value), tz=timezone.utc)
     except (TypeError, ValueError, OSError, OverflowError):
         return None
+
+
+def latest_hermes_timestamp(row):
+    # [2026-10-13][fix] Activity can precede session end; use the latest valid time.
+    values = [parse_epoch_timestamp(row[key]) for key in ("last_activity_at", "ended_at", "started_at")]
+    return max((value for value in values if value is not None), default=None)
 
 
 def parse_hermes_session(connection, session_row, skill_names, include_subagents: bool):
@@ -829,12 +837,7 @@ def parse_hermes_session(connection, session_row, skill_names, include_subagents
 
     session_started_at = parse_epoch_timestamp(session_row["started_at"])
     first_seen = first_ts or session_started_at
-    latest_seen = (
-        last_ts
-        or parse_epoch_timestamp(session_row["last_activity_at"])
-        or parse_epoch_timestamp(session_row["ended_at"])
-        or first_seen
-    )
+    latest_seen = max((value for value in (last_ts, latest_hermes_timestamp(session_row), first_seen) if value is not None), default=None)
 
     if first_seen is not None:
         meta["started_at"] = first_seen.isoformat()
@@ -876,8 +879,8 @@ def find_hermes_sessions(databases, cutoff):
                 SELECT id, source, cwd, title, display_name, parent_session_id,
                        started_at, last_activity_at, ended_at
                 FROM sessions
-                WHERE COALESCE(last_activity_at, ended_at, started_at) >= ?
-                ORDER BY COALESCE(last_activity_at, ended_at, started_at) DESC
+                WHERE MAX(COALESCE(last_activity_at, -9e99), COALESCE(ended_at, -9e99), COALESCE(started_at, -9e99)) >= ?
+                ORDER BY MAX(COALESCE(last_activity_at, -9e99), COALESCE(ended_at, -9e99), COALESCE(started_at, -9e99)) DESC
                 """,
                 (cutoff_epoch,),
             ).fetchall()
@@ -891,9 +894,7 @@ def find_hermes_sessions(databases, cutoff):
         for row in rows:
             records.append((database, row))
     records.sort(
-        key=lambda pair: parse_epoch_timestamp(
-            pair[1]["last_activity_at"] or pair[1]["ended_at"] or pair[1]["started_at"]
-        ) or datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda pair: latest_hermes_timestamp(pair[1]) or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
     return records, scanned
@@ -1553,6 +1554,8 @@ def main():
     grok_home = Path(args.grok_home).expanduser()
     zcode_home = Path(args.zcode_home).expanduser()
     hermes_home = resolve_hermes_home(args.hermes_home)
+    hermes_databases = discover_hermes_databases(args.hermes_home)
+    hermes_homes = [database.parent for database in hermes_databases]
     out_dir = Path(args.out).expanduser()
     transcripts_dir = out_dir / "transcripts"
     transcripts_dir.mkdir(parents=True, exist_ok=True)
@@ -1567,6 +1570,7 @@ def main():
         grok_home=grok_home,
         zcode_home=zcode_home,
         hermes_home=hermes_home,
+        hermes_homes=hermes_homes,
     )
     cutoff = datetime.now(timezone.utc) - timedelta(days=args.days)
 
@@ -1787,7 +1791,6 @@ def main():
         sys.exit(1)
 
     requested_hermes = args.harness in ("auto", "all", "hermes")
-    hermes_databases = discover_hermes_databases(args.hermes_home)
     if requested_hermes and hermes_databases:
         hermes_records, hermes_scanned = find_hermes_sessions(hermes_databases, cutoff)
         sources["hermes"] = {
@@ -1842,6 +1845,7 @@ def main():
             grok_home=grok_home,
             zcode_home=zcode_home,
             hermes_home=hermes_home,
+        hermes_homes=hermes_homes,
         )
     installed_skill_names = set(skills)
     for session in sessions:
