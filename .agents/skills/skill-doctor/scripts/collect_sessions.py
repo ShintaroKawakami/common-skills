@@ -762,10 +762,12 @@ def hermes_tool_edits(tool, args_text):
         command = payload.get("command") if isinstance(payload, dict) else None
         if not isinstance(command, str):
             return False
-        tokens = shlex.split(command)
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>()")
+        lexer.whitespace_split = True
+        executable = lexer.get_token()
     except (ValueError, TypeError):
         return False
-    return bool(tokens) and Path(tokens[0]).name in (GENERIC_EDIT_TOOLS | {"create_file"})
+    return bool(executable) and Path(executable).name in (GENERIC_EDIT_TOOLS | {"create_file"})
 
 
 def parse_hermes_session(connection, session_row, skill_names, include_subagents: bool):

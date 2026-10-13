@@ -888,7 +888,7 @@ class HermesCollectorTests(unittest.TestCase):
 
     def test_hermes_terminal_edit_hints_distinguish_read_and_edit(self):
         import sqlite3
-        for command, expected in [("ls", False), ("apply_patch '*** Begin Patch'", True), ("rg apply_patch README.md", False), ('echo "apply_patch"', False), ("/usr/bin/apply_patch change.patch", True)]:
+        for command, expected in [("ls", False), ("apply_patch '*** Begin Patch'", True), ("rg apply_patch README.md", False), ('echo "apply_patch"', False), ("/usr/bin/apply_patch change.patch", True), ("apply_patch <<'PATCH'\n*** Begin Patch\n+don't\n*** End Patch\nPATCH", True), ("apply_patch<<'PATCH'\n+don't\nPATCH", True)]:
             with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
                 conn = self._make_db(Path(tmp))
                 base = 1_800_000_000.0
