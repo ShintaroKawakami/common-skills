@@ -10,6 +10,7 @@ from pathlib import Path
 
 from collect_sessions import (
     detect_skills_from_entries,
+    detect_skill_candidates,
     discover_hermes_databases,
     discover_skills,
     find_claude_session_files,
@@ -43,6 +44,28 @@ def write_jsonl_past_previous_limit(path, first_record, last_records):
             stream.write(filler)
         for record in last_records:
             stream.write(json.dumps(record) + "\n")
+
+
+class SkillCandidateBoundaryTests(unittest.TestCase):
+    def test_ordinary_tool_name_is_not_skill_usage(self):
+        self.assertEqual(detect_skill_candidates('{"name":"github","owner":"example"}', "create_repository"), set())
+        self.assertEqual(detect_skill_candidates('{"name":"github"}', "skill_view"), {"github"})
+        self.assertEqual(detect_skill_candidates('{"skill":"github"}', "Skill"), {"github"})
+
+    def test_tool_only_assistant_records_are_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            call = {"name": "read_file", "arguments": '{"path":"/repo/.agents/skills/github/SKILL.md"}'}
+            grok = root / "grok.jsonl"
+            write_jsonl(grok, [{"type":"assistant", "content":None, "tool_calls":[call]}])
+            parsed = parse_grok_session(grok, {"github"}, False)
+            self.assertEqual(parsed[1]["assistant_turns"], 1)
+            self.assertEqual(parsed[1]["tool_calls"], 1)
+            zcode = root / "model-io-test.jsonl"
+            write_jsonl(zcode, [{"request":{"body":{"messages":[{"role":"assistant","content":None,"tool_calls":[{"function":call}]}]}}}])
+            parsed = parse_zcode_session(zcode, {"github"}, False)
+            self.assertEqual(parsed[1]["assistant_turns"], 1)
+            self.assertEqual(parsed[1]["tool_calls"], 1)
 
 
 class ClaudeSessionTests(unittest.TestCase):
