@@ -807,7 +807,7 @@ def parse_hermes_session(connection, session_row, skill_names, include_subagents
                 for tool, args_text in assistant_tool_calls({"tool_calls": parsed_calls}):
                     stats["tool_calls"] += 1
                     used_tool_names.add(tool)
-                    if tool in CODE_EDIT_HINTS or tool in GENERIC_EDIT_TOOLS:
+                    if tool in CODE_EDIT_HINTS or tool in GENERIC_EDIT_TOOLS or any(hint in args_text for hint in CODE_EDIT_HINTS):
                         has_code_edit_hint = True
                     call_key = hashlib.sha1((tool + args_text).encode()).hexdigest()
                     seen_calls[call_key] = seen_calls.get(call_key, 0) + 1

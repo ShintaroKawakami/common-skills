@@ -886,6 +886,21 @@ class HermesCollectorTests(unittest.TestCase):
             self.assertEqual(stats["tool_calls"], 1)
             self.assertEqual(skills_used, [])
 
+    def test_hermes_terminal_edit_hints_distinguish_read_and_edit(self):
+        import sqlite3
+        for command, expected in [("ls", False), ("apply_patch '*** Begin Patch'", True)]:
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
+                conn = self._make_db(Path(tmp))
+                base = 1_800_000_000.0
+                conn.execute("INSERT INTO sessions VALUES ('edit','cli','/tmp',NULL,NULL,NULL,?,?,?)", (base, base, base))
+                calls = json.dumps([{"function": {"name": "terminal", "arguments": json.dumps({"command": command})}}])
+                conn.execute("INSERT INTO messages VALUES ('edit','assistant','ok',?,?)", (calls, base))
+                conn.row_factory = sqlite3.Row
+                row = conn.execute("SELECT * FROM sessions WHERE id='edit'").fetchone()
+                parsed = parse_hermes_session(conn, row, set(), False)
+                self.assertEqual(parsed[1]["has_code_edits"], expected)
+                conn.close()
+
     def test_parse_hermes_session_reads_top_level_tool_call_shape(self):
         import sqlite3
 
