@@ -667,13 +667,13 @@ class HermesCollectorTests(unittest.TestCase):
             meta, stats, entries, skills_used = parsed
             self.assertEqual(meta["id"], "s1")
             self.assertEqual(meta["started_at"], datetime.fromtimestamp(base, tz=timezone.utc).isoformat())
-            self.assertEqual(meta["timestamp"], datetime.fromtimestamp(base + 2, tz=timezone.utc).isoformat())
+            self.assertEqual(meta["timestamp"], datetime.fromtimestamp(base + 60, tz=timezone.utc).isoformat())
             self.assertEqual(stats["user_turns"], 1)
             self.assertEqual(stats["assistant_turns"], 1)
             self.assertEqual(stats["tool_calls"], 2)
             self.assertEqual(stats["error_outputs"], 1)
             self.assertEqual(stats["first_ts"], datetime.fromtimestamp(base, tz=timezone.utc).isoformat())
-            self.assertEqual(stats["last_ts"], datetime.fromtimestamp(base + 2, tz=timezone.utc).isoformat())
+            self.assertEqual(stats["last_ts"], datetime.fromtimestamp(base + 60, tz=timezone.utc).isoformat())
             self.assertEqual(skills_used, ["my-skill"])
 
     def test_parse_hermes_session_skips_injected_user_content(self):
