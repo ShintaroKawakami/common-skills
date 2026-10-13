@@ -286,14 +286,17 @@ class TranscriptBuffer:
         ] + list(self._tail)
 
 
-def detect_skill_candidates(text: str):
+def detect_skill_candidates(text: str, tool_name: str = ""):
     """Extract possible installed-skill names from one tool argument payload."""
     normalized = text.replace("\\", "/")
     candidates = set(re.findall(r"(?:^|/)skills/+([^/]+)/+", normalized))
     candidates.update(re.findall(
-        r'"(?:skill|name|bundled_skill_id)"\s*:\s*"([^"]+)"',
+        r'"(?:skill|bundled_skill_id)"\s*:\s*"([^"]+)"',
         normalized,
     ))
+    # A normal tool may also have a name argument; only explicit skill tools own it.
+    if tool_name.lower().split(".")[-1] in {"skill", "skill_view", "view_skill"}:
+        candidates.update(re.findall(r'"name"\s*:\s*"([^"]+)"', normalized))
     return candidates
 
 
@@ -392,7 +395,7 @@ def parse_claude_session(path: Path, skill_names, include_subagents: bool):
                 if seen_calls[key] > 1:
                     stats["repeated_tool_calls"] += 1
                 used_tool_names.add(name)
-                skills_used.update(detect_skill_candidates(args_text))
+                skills_used.update(detect_skill_candidates(args_text, name))
                 has_code_edit_hint = has_code_edit_hint or any(
                     hint in args_text for hint in CODE_EDIT_HINTS
                 )
@@ -514,7 +517,7 @@ def parse_codex_session(path: Path, skill_names, include_subagents: bool):
                 seen_calls[key] = seen_calls.get(key, 0) + 1
                 if seen_calls[key] > 1:
                     stats["repeated_tool_calls"] += 1
-                skills_used.update(detect_skill_candidates(args))
+                skills_used.update(detect_skill_candidates(args, name))
                 has_code_edits = has_code_edits or any(
                     hint in args for hint in CODE_EDIT_HINTS
                 )
@@ -800,7 +803,7 @@ def parse_hermes_session(connection, session_row, skill_names, include_subagents
                         has_code_edit_hint = True
                     call_key = hashlib.sha1((tool + args_text).encode()).hexdigest()
                     seen_calls[call_key] = seen_calls.get(call_key, 0) + 1
-                    for name in detect_skill_candidates(args_text) & set(skill_names):
+                    for name in detect_skill_candidates(args_text, tool) & set(skill_names):
                         skills_used.add(name)
                     if tool == "skill_view":
                         try:
@@ -1201,7 +1204,7 @@ def parse_pi_session(path: Path, skill_names, include_subagents: bool):
                 if seen_calls[key] > 1:
                     stats["repeated_tool_calls"] += 1
                 used_tool_names.add(name)
-                skills_used.update(detect_skill_candidates(args_text))
+                skills_used.update(detect_skill_candidates(args_text, name))
                 has_code_edit_hint = has_code_edit_hint or any(
                     hint in args_text for hint in CODE_EDIT_HINTS
                 )
@@ -1294,9 +1297,9 @@ def parse_grok_session(path: Path, skill_names, include_subagents: bool):
             stats["user_turns"] += 1
             entries.append(("user", truncate(text, MAX_MSG_CHARS)))
         elif record_type == "assistant":
+            stats["assistant_turns"] += 1
             text = extract_text(obj.get("content"))
             if text:
-                stats["assistant_turns"] += 1
                 entries.append(("assistant", truncate(text, MAX_MSG_CHARS)))
             for name, args_text in assistant_tool_calls(obj):
                 stats["tool_calls"] += 1
@@ -1305,7 +1308,7 @@ def parse_grok_session(path: Path, skill_names, include_subagents: bool):
                 if seen_calls[key] > 1:
                     stats["repeated_tool_calls"] += 1
                 used_tool_names.add(name)
-                skills_used.update(detect_skill_candidates(args_text))
+                skills_used.update(detect_skill_candidates(args_text, name))
                 has_code_edit_hint = has_code_edit_hint or any(
                     hint in args_text for hint in CODE_EDIT_HINTS
                 )
@@ -1392,9 +1395,9 @@ def parse_zcode_session(path: Path, skill_names, include_subagents: bool):
             stats["user_turns"] += 1
             entries.append(("user", truncate(text, MAX_MSG_CHARS)))
         elif role == "assistant":
+            stats["assistant_turns"] += 1
             text = extract_text(message.get("content"))
             if text:
-                stats["assistant_turns"] += 1
                 entries.append(("assistant", truncate(text, MAX_MSG_CHARS)))
             for name, args_text in assistant_tool_calls(message):
                 stats["tool_calls"] += 1
@@ -1403,7 +1406,7 @@ def parse_zcode_session(path: Path, skill_names, include_subagents: bool):
                 if seen_calls[key] > 1:
                     stats["repeated_tool_calls"] += 1
                 used_tool_names.add(name)
-                skills_used.update(detect_skill_candidates(args_text))
+                skills_used.update(detect_skill_candidates(args_text, name))
                 has_code_edit_hint = has_code_edit_hint or any(
                     hint in args_text for hint in CODE_EDIT_HINTS
                 )
